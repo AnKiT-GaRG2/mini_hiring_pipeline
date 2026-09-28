@@ -3,7 +3,7 @@ import { Stage } from "@prisma/client";
 import { prisma } from "../../src/db/prisma";
 import { createCandidate, transitionCandidateStage } from "../../src/services/candidate.service";
 import { CandidateNotFoundError, InvalidTransitionError } from "../../src/domain/errors";
-import { resetDatabase } from "../helpers/db";
+import { getBaseline, resetDatabase } from "../helpers/db";
 
 let emailCounter = 0;
 function makeCandidate(overrides: Partial<{ name: string; email: string }> = {}) {
@@ -11,6 +11,9 @@ function makeCandidate(overrides: Partial<{ name: string; email: string }> = {})
   return createCandidate({
     name: overrides.name ?? "Test Candidate",
     email: overrides.email ?? `candidate-${emailCounter}@example.com`,
+    jobId: getBaseline().job.id,
+    source: "OTHER",
+    yearsOfExperience: 0,
   });
 }
 

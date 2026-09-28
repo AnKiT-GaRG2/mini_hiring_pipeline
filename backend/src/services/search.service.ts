@@ -1,6 +1,10 @@
-import { Candidate, Prisma, Stage } from "@prisma/client";
+import { InterviewStatus, InterviewType, Prisma, Stage } from "@prisma/client";
 import { prisma } from "../db/prisma";
 import { ParsedFilters } from "../search/queryParser";
+import { parseDayPhrase } from "../search/dateWords";
+import { matchOneOf, soleWord } from "../search/wordMatch";
+import { candidateSummaryInclude, CandidateSummaryRow } from "../controllers/candidate.presenter";
+import { interviewInclude, toInterviewResponse } from "./interview.service";
 
 /**
  * Thresholds calibrated empirically against the seed data using
@@ -32,7 +36,7 @@ const STAGE_ORDER: Stage[] = [
 export type NameMatchType = "exact" | "prefix" | "word" | "fuzzy";
 
 export type RankedCandidate = {
-  candidate: Candidate;
+  candidate: CandidateSummaryRow;
   score: number | null;
   /** null when the query had no name part, so there is nothing to explain. */
   matchType: NameMatchType | null;
@@ -68,23 +72,23 @@ function buildStructuralWhere(filters: ParsedFilters, now: Date): Prisma.Candida
     const cutoff = durationCutoff(filters.currentStageDuration.durationDays, now);
     switch (filters.currentStageDuration.operator) {
       case ">":
-        and.push({ updatedAt: { lt: cutoff } });
+        and.push({ stageEnteredAt: { lt: cutoff } });
         break;
       case ">=":
-        and.push({ updatedAt: { lte: cutoff } });
+        and.push({ stageEnteredAt: { lte: cutoff } });
         break;
       case "<":
-        and.push({ updatedAt: { gt: cutoff } });
+        and.push({ stageEnteredAt: { gt: cutoff } });
         break;
       case "<=":
-        and.push({ updatedAt: { gte: cutoff } });
+        and.push({ stageEnteredAt: { gte: cutoff } });
         break;
       case "=": {
         const dayStart = new Date(cutoff);
         dayStart.setHours(0, 0, 0, 0);
         const dayEnd = new Date(dayStart);
         dayEnd.setDate(dayEnd.getDate() + 1);
-        and.push({ updatedAt: { gte: dayStart, lt: dayEnd } });
+        and.push({ stageEnteredAt: { gte: dayStart, lt: dayEnd } });
         break;
       }
     }
@@ -109,7 +113,7 @@ function buildStructuralWhere(filters: ParsedFilters, now: Date): Prisma.Candida
   return and.length > 0 ? { AND: and } : {};
 }
 
-function sortByPipelineOrder(candidates: Candidate[]): Candidate[] {
+function sortByPipelineOrder(candidates: CandidateSummaryRow[]): CandidateSummaryRow[] {
   return [...candidates].sort((a, b) => {
     const stageDiff = STAGE_ORDER.indexOf(a.currentStage) - STAGE_ORDER.indexOf(b.currentStage);
     return stageDiff !== 0 ? stageDiff : a.name.localeCompare(b.name);
@@ -147,7 +151,7 @@ export async function searchCandidates(
   now: Date = new Date(),
 ): Promise<RankedCandidate[]> {
   const where = buildStructuralWhere(filters, now);
-  const structurallyFiltered = await prisma.candidate.findMany({ where });
+  const structurallyFiltered = await prisma.candidate.findMany({ where, include: candidateSummaryInclude });
 
   if (!filters.name) {
     return sortByPipelineOrder(structurallyFiltered).map((candidate) => ({
@@ -166,4 +170,158 @@ export async function searchCandidates(
   return ranked
     .filter((row) => row.tier >= 0)
     .map((row) => ({ candidate: byId.get(row.id)!, score: row.score, matchType: toMatchType(row) }));
+}
+
+const GLOBAL_LIMIT = 5;
+
+const ALL_INTERVIEW_TYPES = Object.values(InterviewType);
+
+// One canonical word per interview kind, keyed the way it's typed. "interview"
+// is deliberately the generic, all-kinds entry — matching it is how the bare
+// word "interview" finds something.
+const INTERVIEW_TYPE_WORDS: Record<string, InterviewType[]> = {
+  interview: ALL_INTERVIEW_TYPES,
+  initial: [InterviewType.INITIAL],
+  technical: [InterviewType.TECHNICAL],
+  hr: [InterviewType.HR],
+  panel: [InterviewType.PANEL],
+  hiring: [InterviewType.HIRING_MANAGER],
+  offer: [InterviewType.OFFER_DISCUSSION],
+};
+
+// The same words, but matched as whole words anywhere in a longer, multi-word
+// query ("hr interview", "panel tomorrow"), where prefix prediction doesn't
+// apply — typing stops being ambiguous once a whole word is there to match.
+const SPECIFIC_INTERVIEW_TYPE_KEYWORDS: { pattern: RegExp; types: InterviewType[] }[] = [
+  { pattern: /\binitial\b/i, types: [InterviewType.INITIAL] },
+  { pattern: /\btechnical\b/i, types: [InterviewType.TECHNICAL] },
+  { pattern: /\bhr\b/i, types: [InterviewType.HR] },
+  { pattern: /\bpanel\b/i, types: [InterviewType.PANEL] },
+  { pattern: /\b(?:hiring manager|manager round|hiring)\b/i, types: [InterviewType.HIRING_MANAGER] },
+  { pattern: /\boffer(?:\s+discussion)?\b/i, types: [InterviewType.OFFER_DISCUSSION] },
+];
+
+/**
+ * The union of interview types the query names, or null if it names none.
+ * A specific kind ("hr", "panel", …) narrows to just that kind; the bare word
+ * "interview(s)" only broadens to every kind when no specific one was named —
+ * so "hr interview" still means HR, not every interview. A single word also
+ * matches from a 3-letter prefix ("tech" → Technical), so the quick search
+ * starts predicting before it's fully typed.
+ */
+function interviewTypesFor(q: string): InterviewType[] | null {
+  const word = soleWord(q);
+  if (word) {
+    const hit = matchOneOf(word, Object.keys(INTERVIEW_TYPE_WORDS));
+    return hit ? INTERVIEW_TYPE_WORDS[hit] : null;
+  }
+
+  const matched = new Set<InterviewType>();
+  for (const { pattern, types } of SPECIFIC_INTERVIEW_TYPE_KEYWORDS) {
+    if (pattern.test(q)) for (const t of types) matched.add(t);
+  }
+  if (matched.size > 0) return [...matched];
+  return /\binterviews?\b/i.test(q) ? ALL_INTERVIEW_TYPES : null;
+}
+
+// One canonical word per pipeline stage, keyed the way it's typed.
+const STAGE_WORDS: Record<string, Stage> = {
+  applied: Stage.APPLIED,
+  screening: Stage.SCREENING,
+  interview: Stage.INTERVIEW,
+  offer: Stage.OFFER,
+  hired: Stage.HIRED,
+  rejected: Stage.REJECTED,
+};
+
+/**
+ * The pipeline stage the query names, matching from a 3-letter prefix the
+ * same way {@link interviewTypesFor} does ("hir" → Hired), or a whole word
+ * anywhere in a longer query. Used only as a fallback (see {@link globalSearch})
+ * when nobody's name, email or skill matched the text.
+ */
+function stageFor(q: string): Stage | undefined {
+  const word = soleWord(q);
+  if (word) {
+    const hit = matchOneOf(word, Object.keys(STAGE_WORDS));
+    if (hit) return STAGE_WORDS[hit];
+  }
+  for (const [w, stage] of Object.entries(STAGE_WORDS)) {
+    if (new RegExp(`\\b${w}\\b`, "i").test(q)) return stage;
+  }
+  return undefined;
+}
+
+/**
+ * The quick "jump to" search in the top bar: a few candidates, jobs and skills
+ * whose text contains what was typed, plus:
+ *  - when the query names an interview kind ("interview", "technical", "hr",
+ *    …) or a day ("tomorrow", "sep 30", "next monday", "this week"), the
+ *    interviews that match;
+ *  - when nobody's name, email or skill matched but the query names a
+ *    pipeline stage ("hired", "screening", …), who's currently in it.
+ * A single word matches from a 3-letter prefix throughout, so results start
+ * appearing before it's fully typed. Otherwise deliberately simple substring
+ * matching — the natural-language search on the Candidates page is where the
+ * smart parsing lives.
+ */
+export async function globalSearch(q: string, now: Date = new Date()) {
+  const contains = { contains: q, mode: "insensitive" as const };
+  const lower = q.toLowerCase();
+
+  const dayRange = parseDayPhrase(q, now);
+  const matchedTypes = interviewTypesFor(q);
+  const matchedStage = stageFor(q);
+
+  const [candidates, jobs, skills, interviews, stageCandidates] = await Promise.all([
+    prisma.candidate.findMany({
+      where: { OR: [{ name: contains }, { email: contains }, { skills: { some: { name: contains } } }] },
+      include: candidateSummaryInclude,
+      take: 25,
+    }),
+    prisma.job.findMany({
+      where: { OR: [{ title: contains }, { department: contains }] },
+      select: { id: true, title: true, status: true },
+      take: 25,
+    }),
+    prisma.candidateSkill.groupBy({ by: ["name"], where: { name: contains }, _count: { _all: true }, orderBy: { name: "asc" }, take: 25 }),
+    dayRange || matchedTypes
+      ? prisma.interview.findMany({
+          where: {
+            status: { not: InterviewStatus.CANCELLED },
+            ...(matchedTypes ? { type: { in: matchedTypes } } : {}),
+            // No day named: default to what's coming up, not the whole history.
+            startsAt: dayRange ? { gte: dayRange.from, lt: dayRange.to } : { gte: now },
+          },
+          include: interviewInclude,
+          orderBy: [{ startsAt: "asc" }, { id: "asc" }],
+          take: GLOBAL_LIMIT,
+        })
+      : Promise.resolve([]),
+    matchedStage
+      ? prisma.candidate.findMany({
+          where: { currentStage: matchedStage },
+          include: candidateSummaryInclude,
+          orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+          take: GLOBAL_LIMIT,
+        })
+      : Promise.resolve([]),
+  ]);
+
+  // Names that start with the text come first, then alphabetical.
+  const rank = (name: string) => (name.toLowerCase().startsWith(lower) ? 0 : 1);
+  const byRank = <T,>(get: (item: T) => string) => (a: T, b: T) => rank(get(a)) - rank(get(b)) || get(a).localeCompare(get(b));
+
+  // A literal text match always wins; the stage only fills in when nothing else did.
+  const candidateResults = candidates.length > 0 ? candidates.sort(byRank((c) => c.name)).slice(0, GLOBAL_LIMIT) : stageCandidates;
+
+  return {
+    candidates: candidateResults,
+    jobs: jobs.sort(byRank((j) => j.title)).slice(0, GLOBAL_LIMIT),
+    skills: skills
+      .map((s) => ({ name: s.name, candidateCount: s._count._all }))
+      .sort((a, b) => rank(a.name) - rank(b.name) || b.candidateCount - a.candidateCount || a.name.localeCompare(b.name))
+      .slice(0, GLOBAL_LIMIT),
+    interviews: interviews.map(toInterviewResponse),
+  };
 }

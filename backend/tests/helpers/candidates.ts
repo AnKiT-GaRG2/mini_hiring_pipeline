@@ -1,5 +1,6 @@
 import { Stage } from "@prisma/client";
 import { prisma } from "../../src/db/prisma";
+import { getBaseline } from "./db";
 
 function daysAgo(n: number): Date {
   return new Date(Date.now() - n * 24 * 60 * 60 * 1000);
@@ -10,6 +11,7 @@ export type Hop = { stage: Stage; daysAgo: number };
 export type SeedCandidateInput = {
   name: string;
   email?: string;
+  jobId?: string;
   appliedDaysAgo?: number;
   /** Chronological transitions away from APPLIED, oldest first. */
   path?: Hop[];
@@ -32,8 +34,10 @@ export async function seedCandidate(input: SeedCandidateInput) {
       data: {
         name: input.name,
         email: input.email ?? `seeded-${counter}@example.com`,
+        jobId: input.jobId ?? getBaseline().job.id,
         currentStage: Stage.APPLIED,
         createdAt: daysAgo(appliedDaysAgo),
+        stageEnteredAt: daysAgo(appliedDaysAgo),
         updatedAt: daysAgo(appliedDaysAgo),
       },
     });
@@ -46,7 +50,7 @@ export async function seedCandidate(input: SeedCandidateInput) {
       });
       await tx.candidate.update({
         where: { id: created.id },
-        data: { currentStage: hop.stage, updatedAt: changedAt },
+        data: { currentStage: hop.stage, stageEnteredAt: changedAt, updatedAt: changedAt },
       });
       current = hop.stage;
     }

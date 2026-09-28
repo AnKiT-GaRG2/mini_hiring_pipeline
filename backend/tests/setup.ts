@@ -4,3 +4,5 @@
 process.env.DATABASE_URL =
   "postgresql://postgres:postgres@localhost:5432/mini_hiring_pipeline_test?schema=public";
 process.env.NODE_ENV = "test";
+// The team member every request acts as unless it names another with x-user-id (see helpers/db.ts).
+process.env.DEFAULT_USER_EMAIL = "manager@example.com";

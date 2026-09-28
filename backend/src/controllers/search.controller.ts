@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { describeFilters } from "../search/describeFilters";
 import { parseSearchQuery } from "../search/queryParser";
-import { searchCandidates } from "../services/search.service";
+import { globalSearch, searchCandidates } from "../services/search.service";
 import { parseSearchQueryParams } from "../validation/search.validation";
 import { toCandidateResponse } from "./candidate.presenter";
 
@@ -35,4 +35,10 @@ export async function search(req: Request, res: Response) {
       matchType,
     })),
   });
+}
+
+export async function globalSearchHandler(req: Request, res: Response) {
+  const { q } = parseSearchQueryParams(req.query);
+  const found = await globalSearch(q);
+  res.status(200).json({ ...found, candidates: found.candidates.map((c) => toCandidateResponse(c)) });
 }

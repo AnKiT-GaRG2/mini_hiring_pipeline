@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Stage } from "@prisma/client";
+import { CandidateSource, Stage } from "@prisma/client";
 import { toCandidateResponse, toStageHistoryResponse } from "../../src/controllers/candidate.presenter";
 
 function fakeCandidate(overrides: Partial<Parameters<typeof toCandidateResponse>[0]> = {}) {
@@ -9,6 +9,16 @@ function fakeCandidate(overrides: Partial<Parameters<typeof toCandidateResponse>
     email: "ada@example.com",
     phone: null,
     currentStage: Stage.SCREENING,
+    location: null,
+    source: CandidateSource.OTHER,
+    yearsOfExperience: 0,
+    summary: null,
+    githubUrl: null,
+    linkedinUrl: null,
+    portfolioUrl: null,
+    resumeUrl: null,
+    jobId: "j1",
+    stageEnteredAt: new Date("2026-01-01T00:00:00.000Z"),
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   };
@@ -16,8 +26,8 @@ function fakeCandidate(overrides: Partial<Parameters<typeof toCandidateResponse>
 }
 
 describe("toCandidateResponse", () => {
-  it("computes daysInCurrentStage from updatedAt (current-stage start time)", () => {
-    const candidate = fakeCandidate({ updatedAt: new Date("2026-01-01T00:00:00.000Z") });
+  it("computes daysInCurrentStage from stageEnteredAt (current-stage start time)", () => {
+    const candidate = fakeCandidate({ stageEnteredAt: new Date("2026-01-01T00:00:00.000Z") });
     const now = new Date("2026-01-09T12:00:00.000Z"); // 8.5 days later
 
     const result = toCandidateResponse(candidate, now);
@@ -28,9 +38,18 @@ describe("toCandidateResponse", () => {
 
   it("reports 0 days for a candidate that just changed stage", () => {
     const now = new Date("2026-01-01T00:00:00.000Z");
-    const candidate = fakeCandidate({ updatedAt: now });
+    const candidate = fakeCandidate({ stageEnteredAt: now });
 
     expect(toCandidateResponse(candidate, now).daysInCurrentStage).toBe(0);
+  });
+
+  it("is not reset by editing the profile (updatedAt moves, the stage clock does not)", () => {
+    const candidate = fakeCandidate({
+      stageEnteredAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-08T00:00:00.000Z"),
+    });
+
+    expect(toCandidateResponse(candidate, new Date("2026-01-09T00:00:00.000Z")).daysInCurrentStage).toBe(8);
   });
 
   it("passes through candidate fields unchanged", () => {
@@ -55,6 +74,7 @@ describe("toStageHistoryResponse", () => {
       fromStage: Stage.APPLIED,
       toStage: Stage.SCREENING,
       changedAt: new Date("2026-02-01T10:00:00.000Z"),
+      changedById: null,
     });
 
     expect(result).toEqual({
@@ -62,6 +82,7 @@ describe("toStageHistoryResponse", () => {
       fromStage: Stage.APPLIED,
       toStage: Stage.SCREENING,
       changedAt: "2026-02-01T10:00:00.000Z",
+      changedBy: null,
     });
   });
 });

@@ -494,3 +494,24 @@ describe("GET /api/search — combined conditions", () => {
     ]);
   });
 });
+
+describe("time in stage survives profile edits", () => {
+  it("still finds someone 'stuck' after their profile is edited", async () => {
+    const stuck = await seedCandidate({
+      name: "Stuck Person",
+      appliedDaysAgo: 20,
+      path: [{ stage: Stage.SCREENING, daysAgo: 10 }],
+    });
+
+    const before = await search("stuck in screening for more than a week");
+    expect(names(before.body)).toEqual(["Stuck Person"]);
+
+    // Editing a profile bumps updatedAt, but must not restart the stage clock.
+    const edit = await request(app).patch(`/api/candidates/${stuck.id}`).send({ location: "Pune, India" });
+    expect(edit.status).toBe(200);
+
+    const after = await search("stuck in screening for more than a week");
+    expect(names(after.body)).toEqual(["Stuck Person"]);
+    expect(after.body.results[0].daysInCurrentStage).toBe(10);
+  });
+});

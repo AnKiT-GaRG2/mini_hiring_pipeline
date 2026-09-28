@@ -3,7 +3,7 @@ import request from "supertest";
 import { Stage } from "@prisma/client";
 import { app } from "../../src/app";
 import { prisma } from "../../src/db/prisma";
-import { resetDatabase } from "../helpers/db";
+import { getBaseline, resetDatabase } from "../helpers/db";
 
 beforeEach(resetDatabase);
 afterAll(() => prisma.$disconnect());
@@ -14,6 +14,7 @@ async function createCandidate(overrides: Partial<{ name: string; email: string;
     .send({
       name: overrides.name ?? "Test Candidate",
       email: overrides.email ?? `candidate-${Date.now()}-${Math.random()}@example.com`,
+      jobId: getBaseline().job.id,
       ...(overrides.phone ? { phone: overrides.phone } : {}),
     });
   return res.body as { id: string; currentStage: Stage };
@@ -23,7 +24,7 @@ describe("POST /api/candidates", () => {
   it("creates a candidate at the Applied stage", async () => {
     const res = await request(app)
       .post("/api/candidates")
-      .send({ name: "Priya Sharma", email: "priya@example.com", phone: "+91-90000-00000" });
+      .send({ name: "Priya Sharma", email: "priya@example.com", phone: "+91-90000-00000", jobId: getBaseline().job.id });
 
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({
@@ -40,14 +41,14 @@ describe("POST /api/candidates", () => {
   it("allows phone to be omitted", async () => {
     const res = await request(app)
       .post("/api/candidates")
-      .send({ name: "No Phone", email: "nophone@example.com" });
+      .send({ name: "No Phone", email: "nophone@example.com", jobId: getBaseline().job.id });
 
     expect(res.status).toBe(201);
     expect(res.body.phone).toBeNull();
   });
 
   it("rejects a missing name with 400", async () => {
-    const res = await request(app).post("/api/candidates").send({ email: "x@example.com" });
+    const res = await request(app).post("/api/candidates").send({ email: "x@example.com", jobId: getBaseline().job.id });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("Validation failed");
     expect(res.body.details).toEqual(
@@ -58,7 +59,7 @@ describe("POST /api/candidates", () => {
   it("rejects an invalid email with 400", async () => {
     const res = await request(app)
       .post("/api/candidates")
-      .send({ name: "Bad Email", email: "not-an-email" });
+      .send({ name: "Bad Email", email: "not-an-email", jobId: getBaseline().job.id });
     expect(res.status).toBe(400);
     expect(res.body.details).toEqual(
       expect.arrayContaining([expect.objectContaining({ path: "email" })]),
@@ -69,7 +70,7 @@ describe("POST /api/candidates", () => {
     await createCandidate({ email: "dup@example.com" });
     const res = await request(app)
       .post("/api/candidates")
-      .send({ name: "Someone Else", email: "dup@example.com" });
+      .send({ name: "Someone Else", email: "dup@example.com", jobId: getBaseline().job.id });
 
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/already exists/i);
@@ -77,10 +78,10 @@ describe("POST /api/candidates", () => {
 });
 
 describe("GET /api/candidates", () => {
-  it("returns an empty array when there are no candidates", async () => {
+  it("returns an empty page when there are no candidates", async () => {
     const res = await request(app).get("/api/candidates");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body).toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
   });
 
   it("lists created candidates with stage and duration info", async () => {
@@ -89,8 +90,9 @@ describe("GET /api/candidates", () => {
 
     const res = await request(app).get("/api/candidates");
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(2);
-    for (const candidate of res.body) {
+    expect(res.body.items).toHaveLength(2);
+    expect(res.body.total).toBe(2);
+    for (const candidate of res.body.items) {
       expect(candidate).toHaveProperty("currentStage");
       expect(candidate).toHaveProperty("currentStageSince");
       expect(candidate).toHaveProperty("daysInCurrentStage");
@@ -106,8 +108,8 @@ describe("GET /api/candidates", () => {
 
     const res = await request(app).get("/api/candidates?stage=SCREENING");
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].id).toBe(inScreening.id);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].id).toBe(inScreening.id);
   });
 
   it("rejects an invalid stage filter with 400", async () => {

@@ -1,9 +1,12 @@
 import { ErrorRequestHandler } from "express";
 import {
-  CandidateNotFoundError,
+  ConflictError,
   DuplicateEmailError,
+  ForbiddenError,
   InvalidTransitionError,
+  NotFoundError,
   RequestValidationError,
+  UnauthenticatedError,
 } from "../domain/errors";
 
 /**
@@ -23,12 +26,22 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
-  if (err instanceof CandidateNotFoundError) {
+  if (err instanceof UnauthenticatedError) {
+    res.status(401).json({ error: err.message });
+    return;
+  }
+
+  if (err instanceof ForbiddenError) {
+    res.status(403).json({ error: err.message });
+    return;
+  }
+
+  if (err instanceof NotFoundError) {
     res.status(404).json({ error: err.message });
     return;
   }
 
-  if (err instanceof DuplicateEmailError) {
+  if (err instanceof DuplicateEmailError || err instanceof ConflictError) {
     res.status(409).json({ error: err.message });
     return;
   }
@@ -38,10 +51,12 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
-  // express.json() throws a SyntaxError with a 4xx `status` for malformed
-  // request bodies — surface that instead of a generic 500.
-  if (err instanceof SyntaxError && "status" in err && typeof err.status === "number") {
-    res.status(err.status).json({ error: "Malformed request body" });
+  // express.json() throws a SyntaxError (400) for malformed bodies and an error
+  // with type "entity.too.large" (413) for oversized ones — surface those
+  // instead of a generic 500.
+  if (typeof err === "object" && err !== null && "status" in err && typeof err.status === "number" && err.status < 500) {
+    const message = "type" in err && err.type === "entity.too.large" ? "Request body is too large" : "Malformed request body";
+    res.status(err.status).json({ error: message });
     return;
   }
 
