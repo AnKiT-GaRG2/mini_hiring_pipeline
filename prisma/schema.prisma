@@ -7,6 +7,8 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─────────────────────────────── Enums ───────────────────────────────
+
 enum Stage {
   APPLIED
   SCREENING
@@ -16,29 +18,329 @@ enum Stage {
   REJECTED
 }
 
-model Candidate {
-  id           String   @id @default(cuid())
+enum UserRole {
+  ADMIN
+  HIRING_MANAGER
+  RECRUITER
+}
+
+// Team members are deactivated, never deleted: audit rows point at them.
+enum UserStatus {
+  ACTIVE
+  DEACTIVATED
+}
+
+// Shown in the UI as Active / On Hold / Closed.
+enum JobStatus {
+  OPEN
+  PAUSED
+  CLOSED
+}
+
+enum WorkMode {
+  REMOTE
+  HYBRID
+  ON_SITE
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+}
+
+enum CandidateSource {
+  LINKEDIN
+  REFERRAL
+  CAREER_PAGE
+  JOB_BOARD
+  AGENCY
+  OTHER
+}
+
+enum InterviewType {
+  INITIAL
+  TECHNICAL
+  HR
+  PANEL
+  HIRING_MANAGER
+  OFFER_DISCUSSION
+}
+
+enum MeetingPlatform {
+  ZOOM
+  GOOGLE_MEET
+  PHONE
+  ON_SITE
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum ActivityType {
+  CANDIDATE_ADDED
+  STAGE_CHANGED
+  NOTE_ADDED
+  INTERVIEW_SCHEDULED
+  INTERVIEW_RESCHEDULED
+  INTERVIEW_CANCELLED
+  INTERVIEW_COMPLETED
+}
+
+// ───────────────────────────── Organisation ─────────────────────────────
+
+// Exactly one row (id = 'company'); the app is single-tenant.
+model Company {
+  id           String   @id @default("company")
   name         String
-  email        String   @unique
-  phone        String?
-  currentStage Stage    @default(APPLIED)
-  createdAt    DateTime @default(now())
+  website      String?
+  industry     String?
+  size         String?
+  location     String?
+  description  String?
+  // Small images stored inline (a data: URL) so there is no file storage to run.
+  logoDataUrl  String?
+  coverDataUrl String?
   updatedAt    DateTime @updatedAt
+}
+
+model User {
+  id        String     @id @default(cuid())
+  name      String
+  email     String     @unique
+  role      UserRole   @default(RECRUITER)
+  status    UserStatus @default(ACTIVE)
+  jobTitle  String?
+  phone     String?
+  location  String?
+  joinedAt  DateTime   @default(now())
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  jobsCreated    Job[]
+  notes          Note[]
+  interviews     InterviewParticipant[]
+  interviewsMade Interview[]
+  activities     Activity[]
+  notifications  Notification[]
+  stageChanges   StageHistory[]
+
+  @@index([role])
+}
+
+model Job {
+  id             String         @id @default(cuid())
+  title          String
+  department     String?
+  location       String?
+  workMode       WorkMode       @default(ON_SITE)
+  employmentType EmploymentType @default(FULL_TIME)
+  status         JobStatus      @default(OPEN)
+  openings       Int            @default(1)
+  description    String?
+  createdById    String?
+  createdBy      User?          @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  closedAt       DateTime?
+
+  candidates Candidate[]
+  activities Activity[]
+
+  @@index([status])
+}
+
+// ───────────────────────────── Candidates ─────────────────────────────
+
+model Candidate {
+  id                String          @id @default(cuid())
+  name              String
+  email             String          @unique
+  phone             String?
+  currentStage      Stage           @default(APPLIED)
+  // When the candidate entered currentStage. Kept separate from updatedAt,
+  // which now also moves when a profile is edited or a note is added.
+  stageEnteredAt    DateTime        @default(now())
+  jobId             String
+  job               Job             @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  location          String?
+  source            CandidateSource @default(OTHER)
+  yearsOfExperience Int             @default(0)
+  summary           String?
+  githubUrl         String?
+  linkedinUrl       String?
+  portfolioUrl      String?
+  resumeUrl         String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   stageHistory StageHistory[]
+  skills       CandidateSkill[]
+  experiences  CandidateExperience[]
+  education    CandidateEducation[]
+  notes        Note[]
+  tags         CandidateTag[]
+  interviews   Interview[]
+  activities   Activity[]
 
   @@index([currentStage])
+  @@index([jobId, currentStage])
+  @@index([createdAt])
+}
+
+model CandidateSkill {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  name        String
+  position    Int       @default(0)
+
+  @@unique([candidateId, name])
+  @@index([name])
+}
+
+model CandidateExperience {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  title       String
+  company     String
+  startDate   DateTime  @db.Date
+  // null = current role
+  endDate     DateTime? @db.Date
+  description String?
+
+  @@index([candidateId])
+}
+
+model CandidateEducation {
+  id           String    @id @default(cuid())
+  candidateId  String
+  candidate    Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  degree       String
+  fieldOfStudy String?
+  institution  String
+  startYear    Int?
+  endYear      Int?
+
+  @@index([candidateId])
+}
+
+model Tag {
+  id         String         @id @default(cuid())
+  name       String         @unique
+  color      String         @default("slate")
+  createdAt  DateTime       @default(now())
+  candidates CandidateTag[]
+}
+
+model CandidateTag {
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  tagId       String
+  tag         Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@id([candidateId, tagId])
+  @@index([tagId])
+}
+
+model Note {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  body        String
+  createdAt   DateTime  @default(now())
+
+  @@index([candidateId, createdAt])
 }
 
 // Append-only: rows are only ever created by the transition service, never
 // updated or deleted (enforced further by a DB trigger — see migration.sql).
 model StageHistory {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   candidateId String
   candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Restrict)
   fromStage   Stage
   toStage     Stage
   changedAt   DateTime  @default(now())
+  // Who made the change. Null for rows that predate team members.
+  changedById String?
+  changedBy   User?     @relation(fields: [changedById], references: [id], onDelete: Restrict)
 
   @@index([candidateId])
+  @@index([toStage, changedAt])
+}
+
+// ───────────────────────────── Interviews ─────────────────────────────
+
+model Interview {
+  id          String          @id @default(cuid())
+  candidateId String
+  candidate   Candidate       @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  type        InterviewType
+  startsAt    DateTime
+  endsAt      DateTime
+  platform    MeetingPlatform @default(GOOGLE_MEET)
+  meetingLink String?
+  location    String?
+  status      InterviewStatus @default(SCHEDULED)
+  notes       String?
+  createdById String
+  createdBy   User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  interviewers InterviewParticipant[]
+
+  @@index([startsAt])
+  @@index([candidateId, startsAt])
+}
+
+model InterviewParticipant {
+  interviewId String
+  interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([interviewId, userId])
+  @@index([userId])
+}
+
+// ───────────────────────── Activity & notifications ─────────────────────────
+
+model Activity {
+  id          String       @id @default(cuid())
+  type        ActivityType
+  candidateId String?
+  candidate   Candidate?   @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  jobId       String?
+  job         Job?         @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  actorId     String?
+  actor       User?        @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  // Structured details (stages, interview type, …); the API turns these into a sentence.
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+
+  @@index([createdAt])
+  @@index([candidateId, createdAt])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String?
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
 }
