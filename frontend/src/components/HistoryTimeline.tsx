@@ -10,24 +10,18 @@ export function HistoryTimeline({ entries, now }: { entries: TimelineEntry[]; no
     <ol aria-label="Stage history" className="relative">
       {entries.map((entry, index) => (
         <li key={entry.key} className="relative flex gap-4 pb-6 last:pb-0">
-          {index < entries.length - 1 && (
-            <span className="absolute top-3 bottom-0 left-[5px] w-px bg-slate-200" aria-hidden="true" />
-          )}
-          <span
-            className={`relative z-10 mt-1.5 h-[11px] w-[11px] shrink-0 rounded-full ring-4 ring-white ${
-              STAGE_STYLES[entry.stage].dot
-            }`}
-            aria-hidden="true"
-          />
+          {index < entries.length - 1 && <span className="absolute top-3 bottom-0 left-[5px] w-px bg-line-strong" aria-hidden="true" />}
+          <span className={`relative z-10 mt-1.5 h-[11px] w-[11px] shrink-0 rounded-full ring-4 ring-white ${STAGE_STYLES[entry.stage].dot}`} aria-hidden="true" />
           <div className="min-w-0">
-            <time dateTime={entry.at} className="block text-sm font-semibold text-slate-900">
+            <time dateTime={entry.at} className="block text-sm font-semibold text-ink-950">
               {formatEventDate(entry.at, now)}
-              <span className="ml-2 text-xs font-normal text-slate-500">{formatEventTime(entry.at)}</span>
+              <span className="ml-2 text-xs font-normal text-ink-500">{formatEventTime(entry.at)}</span>
             </time>
-            <p className="text-sm text-slate-700">
+            <p className="text-sm text-ink-600">
               {entry.text}
+              {entry.by && <span className="text-ink-400"> · {entry.by}</span>}
               {entry.isCurrent && (
-                <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-200">
+                <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 ring-1 ring-inset ring-brand-200">
                   Current
                 </span>
               )}

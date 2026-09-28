@@ -1,5 +1,5 @@
 import type { DurationOperator, MatchType, ParsedQuery } from '../api/types'
-import { formatEventDate } from './history'
+import { formatDate } from './format'
 import { STAGE_LABELS } from './stages'
 
 const OPERATOR_WORDS: Record<DurationOperator, string> = {
@@ -11,7 +11,7 @@ const OPERATOR_WORDS: Record<DurationOperator, string> = {
 }
 
 /** "Current stage = Interview", "More than 7 days in current stage", … — one label per filter the backend applied. */
-export function describeFilters(parsed: ParsedQuery, now: number): string[] {
+export function describeFilters(parsed: ParsedQuery): string[] {
   const labels: string[] = []
 
   if (parsed.name) labels.push(`Name similar to “${parsed.name.query}”`)
@@ -24,7 +24,7 @@ export function describeFilters(parsed: ParsedQuery, now: number): string[] {
 
   if (parsed.movedToStage) {
     const { stage, since } = parsed.movedToStage
-    labels.push(`Moved to ${STAGE_LABELS[stage]}${since ? ` since ${formatEventDate(since, now)}` : ''}`)
+    labels.push(`Moved to ${STAGE_LABELS[stage]}${since ? ` since ${formatDate(since)}` : ''}`)
   }
 
   if (parsed.reachedStageNotHired) labels.push(`Reached ${STAGE_LABELS[parsed.reachedStageNotHired]} but not hired`)

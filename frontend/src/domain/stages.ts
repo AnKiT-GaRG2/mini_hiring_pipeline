@@ -37,13 +37,23 @@ export function canReject(stage: Stage): boolean {
 }
 
 // Full class names (not built from fragments) so Tailwind can see them.
-export const STAGE_STYLES: Record<Stage, { badge: string; dot: string }> = {
-  APPLIED: { badge: 'bg-slate-100 text-slate-700 ring-slate-200', dot: 'bg-slate-400' },
-  SCREENING: { badge: 'bg-sky-50 text-sky-700 ring-sky-200', dot: 'bg-sky-500' },
-  INTERVIEW: { badge: 'bg-violet-50 text-violet-700 ring-violet-200', dot: 'bg-violet-500' },
-  OFFER: { badge: 'bg-amber-50 text-amber-800 ring-amber-200', dot: 'bg-amber-500' },
-  HIRED: { badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500' },
-  REJECTED: { badge: 'bg-rose-50 text-rose-700 ring-rose-200', dot: 'bg-rose-500' },
+export const STAGE_STYLES: Record<Stage, { badge: string; dot: string; column: string; count: string; hex: string }> = {
+  APPLIED: { badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400', column: 'from-slate-100/80', count: 'text-slate-500', hex: '#94a3b8' },
+  SCREENING: { badge: 'bg-blue-50 text-blue-600', dot: 'bg-blue-500', column: 'from-blue-50', count: 'text-blue-600', hex: '#3b82f6' },
+  INTERVIEW: { badge: 'bg-violet-50 text-violet-600', dot: 'bg-violet-500', column: 'from-violet-50', count: 'text-violet-600', hex: '#8b5cf6' },
+  OFFER: { badge: 'bg-orange-50 text-orange-600', dot: 'bg-orange-400', column: 'from-orange-50', count: 'text-orange-600', hex: '#fb923c' },
+  HIRED: { badge: 'bg-emerald-50 text-emerald-600', dot: 'bg-emerald-500', column: 'from-emerald-50', count: 'text-emerald-600', hex: '#10b981' },
+  REJECTED: { badge: 'bg-rose-50 text-rose-600', dot: 'bg-rose-500', column: 'from-rose-50', count: 'text-rose-600', hex: '#f43f5e' },
+}
+
+/** What each board column says it holds. */
+export const STAGE_DESCRIPTIONS: Record<Stage, string> = {
+  APPLIED: 'New candidates who have applied',
+  SCREENING: 'Initial screening & resume review',
+  INTERVIEW: 'Interview rounds in progress',
+  OFFER: 'Offer extended to candidates',
+  HIRED: 'Successfully onboarded',
+  REJECTED: 'Not moving forward',
 }
 
 const MINUTE = 60_000

@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { Candidate, Stage, StageHistoryEntry } from '../api/types'
+import type { Candidate, Job, Me } from '../api/types'
 
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -8,14 +8,20 @@ export function json(body: unknown, status = 200): Response {
 const DAY = 24 * 60 * 60 * 1000
 
 export function makeCandidate(name: string, overrides: Partial<Candidate> = {}): Candidate {
-  const slug = name.toLowerCase().split(' ')[0]
+  const slug = name.toLowerCase().replace(/\s+/g, '.')
   const since = new Date(Date.now() - 3 * DAY).toISOString()
   return {
     id: slug,
     name,
     email: `${slug}@example.com`,
     phone: null,
+    location: null,
     currentStage: 'APPLIED',
+    source: 'OTHER',
+    yearsOfExperience: 2,
+    job: { id: 'job-1', title: 'Frontend Developer' },
+    skills: [],
+    tags: [],
     createdAt: since,
     updatedAt: since,
     currentStageSince: since,
@@ -24,137 +30,63 @@ export function makeCandidate(name: string, overrides: Partial<Candidate> = {}):
   }
 }
 
-export type RecordedCall = { method: string; path: string; body: unknown }
+export const FAKE_ME: Me = {
+  id: 'me-1',
+  name: 'Ankit Garg',
+  email: 'ankit.garg@example.com',
+  role: 'HIRING_MANAGER',
+  status: 'ACTIVE',
+  jobTitle: 'Hiring Manager',
+  phone: null,
+  location: null,
+  joinedAt: new Date().toISOString(),
+  permissions: ['team:manage', 'company:edit', 'jobs:manage'],
+}
 
-type RequestContext = { method: string; url: URL; body: Record<string, unknown> | undefined }
-type Rule = { key: string; once: boolean; respond: (ctx: RequestContext) => Response | Promise<Response> }
+export const FAKE_JOB: Job = {
+  id: 'job-1',
+  title: 'Frontend Developer',
+  department: 'Engineering',
+  location: 'Bengaluru, India',
+  workMode: 'REMOTE',
+  employmentType: 'FULL_TIME',
+  status: 'OPEN',
+  openings: 1,
+  description: null,
+  createdAt: new Date().toISOString(),
+  closedAt: null,
+  createdBy: { id: 'me-1', name: 'Ankit Garg' },
+  counts: { APPLIED: 1, SCREENING: 0, INTERVIEW: 0, OFFER: 0, HIRED: 0, REJECTED: 0 },
+  total: 1,
+  active: 1,
+  hired: 0,
+}
+
+export type Rule = { test: (method: string, url: URL) => boolean; respond: (url: URL) => Response | Promise<Response> }
+
+export type RecordedCall = { method: string; url: URL }
 
 /**
- * Replaces global fetch with an in-memory stand-in for the backend. Happy
- * paths behave like the real API; anything else (a 409, a 500, a slow
- * response) is scripted per test via `override` / `hold`.
+ * Replaces global fetch with a small router: each test registers the routes it
+ * cares about, and anything unmatched 404s loudly instead of hanging silently.
  */
-export function installFakeApi(initial: Candidate[]) {
-  let candidates = [...initial]
-  const histories: Record<string, StageHistoryEntry[]> = {}
+export function installFakeApi() {
   const calls: RecordedCall[] = []
   const rules: Rule[] = []
 
-  function defaultResponse(method: string, url: URL, body: Record<string, unknown> | undefined): Response {
-    const { pathname } = url
-
-    if (method === 'GET' && pathname === '/api/candidates') return json(candidates)
-
-    if (method === 'POST' && pathname === '/api/candidates') {
-      const email = String(body?.email)
-      if (candidates.some((c) => c.email === email)) {
-        return json({ error: `A candidate with email ${email} already exists` }, 409)
-      }
-      const now = new Date().toISOString()
-      const created = makeCandidate(String(body?.name), {
-        id: `new-${candidates.length}`,
-        email,
-        phone: (body?.phone as string | undefined) ?? null,
-        createdAt: now,
-        updatedAt: now,
-        currentStageSince: now,
-        daysInCurrentStage: 0,
-      })
-      candidates = [...candidates, created]
-      return json(created, 201)
-    }
-
-    const action = /^\/api\/candidates\/([^/]+)\/(transition|reject)$/.exec(pathname)
-    if (method === 'POST' && action) {
-      const target = candidates.find((c) => c.id === decodeURIComponent(action[1]))
-      if (!target) return json({ error: 'Candidate not found' }, 404)
-      const to = (action[2] === 'reject' ? 'REJECTED' : body?.toStage) as Stage
-      const now = new Date().toISOString()
-      const trail = histories[target.id] ?? []
-      histories[target.id] = [...trail, { id: `h-${target.id}-${trail.length}`, fromStage: target.currentStage, toStage: to, changedAt: now }]
-      const updated = { ...target, currentStage: to, updatedAt: now, currentStageSince: now, daysInCurrentStage: 0 }
-      candidates = candidates.map((c) => (c.id === updated.id ? updated : c))
-      return json(updated)
-    }
-
-    const read = /^\/api\/candidates\/([^/]+)(\/history)?$/.exec(pathname)
-    if (method === 'GET' && read) {
-      const id = decodeURIComponent(read[1])
-      const found = candidates.find((c) => c.id === id)
-      if (!found) return json({ error: `Candidate ${id} not found` }, 404)
-      return json(read[2] ? (histories[id] ?? []) : found)
-    }
-
-    if (method === 'GET' && pathname === '/api/search') {
-      const q = (url.searchParams.get('q') ?? '').toLowerCase()
-      const results = candidates
-        .filter((c) => c.name.toLowerCase().includes(q))
-        .map((c) => ({ ...c, score: 1, matchType: 'word' }))
-      return json({ success: true, query: url.searchParams.get('q'), parsedQuery: { name: { query: q } }, results })
-    }
-
-    return json({ error: 'Not found' }, 404)
+  function on(test: Rule['test'], respond: Rule['respond']) {
+    rules.push({ test, respond })
   }
 
-  const respondTo = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const method = (init.method ?? 'GET').toUpperCase()
     const url = new URL(String(input), 'http://localhost')
-    const method = (init?.method ?? 'GET').toUpperCase()
-    const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : undefined
-    calls.push({ method, path: url.pathname + url.search, body })
-
-    const key = `${method} ${url.pathname}`
-    const index = rules.findIndex((r) => r.key === key)
-    if (index !== -1) {
-      const rule = rules[index]
-      if (rule.once) rules.splice(index, 1)
-      return rule.respond({ method, url, body })
-    }
-    return defaultResponse(method, url, body)
-  }
-
-  const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
-    const signal = init?.signal
-    if (!signal) return respondTo(input, init)
-
-    // Like a real fetch: reject with an AbortError as soon as the signal fires.
-    return new Promise<Response>((resolve, reject) => {
-      const abort = () => reject(new DOMException('The operation was aborted.', 'AbortError'))
-      if (signal.aborted) return abort()
-      signal.addEventListener('abort', abort, { once: true })
-      respondTo(input, init).then(resolve, reject)
-    })
+    calls.push({ method, url })
+    const rule = rules.find((r) => r.test(method, url))
+    if (!rule) return json({ error: `No fake route for ${method} ${url.pathname}${url.search}` }, 404)
+    return rule.respond(url)
   })
+  vi.stubGlobal('fetch', fetchMock)
 
-  return {
-    calls,
-    /** Requests matching "METHOD /path" so far. */
-    callsTo: (key: string) => calls.filter((c) => `${c.method} ${c.path.split('?')[0]}` === key),
-    /** Server-side truth, for scenarios where the UI is stale. */
-    setCandidates(next: Candidate[]) {
-      candidates = next
-    },
-    /** Server-side audit trail for a candidate (oldest first, as the real API returns it). */
-    setHistory(id: string, entries: StageHistoryEntry[]) {
-      histories[id] = entries
-    },
-    /** Answer the next request to "METHOD /path" with `respond` instead. */
-    override(key: string, respond: (ctx: RequestContext) => Response | Promise<Response>) {
-      rules.push({ key, once: true, respond })
-    },
-    /** Delay the next request to "METHOD /path" until the returned function is called. */
-    hold(key: string) {
-      let release!: () => void
-      const gate = new Promise<void>((resolve) => (release = resolve))
-      rules.push({
-        key,
-        once: true,
-        respond: async ({ method, url, body }) => {
-          await gate
-          return defaultResponse(method, url, body)
-        },
-      })
-      return release
-    },
-    restore: () => spy.mockRestore(),
-  }
+  return { on, calls, path: (p: string) => (_m: string, u: URL) => u.pathname === p }
 }

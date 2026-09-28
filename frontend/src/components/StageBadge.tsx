@@ -1,12 +1,9 @@
 import type { Stage } from '../api/types'
 import { STAGE_LABELS, STAGE_STYLES } from '../domain/stages'
 
-export function StageBadge({ stage }: { stage: Stage }) {
+export function StageBadge({ stage, className = '' }: { stage: Stage; className?: string }) {
   return (
-    <span
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STAGE_STYLES[stage].badge}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${STAGE_STYLES[stage].dot}`} aria-hidden="true" />
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STAGE_STYLES[stage].badge} ${className}`}>
       {STAGE_LABELS[stage]}
     </span>
   )

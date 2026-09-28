@@ -1,4 +1,4 @@
-import type { Candidate, Stage, StageHistoryEntry } from '../api/types'
+import type { Stage, StageHistoryEntry } from '../api/types'
 import { STAGE_LABELS } from './stages'
 
 /**
@@ -12,6 +12,7 @@ export type TimelineEntry = {
   /** The stage the candidate was in as of this entry (drives the colour). */
   stage: Stage
   text: string
+  by: string | null
   isCurrent: boolean
 }
 
@@ -23,38 +24,20 @@ export function sortHistory(history: readonly StageHistoryEntry[]): StageHistory
     .map(({ entry }) => entry)
 }
 
-export function buildTimeline(candidate: Candidate, history: readonly StageHistoryEntry[]): TimelineEntry[] {
+export function buildTimeline(createdAt: string, history: readonly StageHistoryEntry[]): TimelineEntry[] {
   const entries: TimelineEntry[] = [
-    { key: 'created', at: candidate.createdAt, stage: 'APPLIED', text: STAGE_LABELS.APPLIED, isCurrent: false },
+    { key: 'created', at: createdAt, stage: 'APPLIED', text: `Applied — entered ${STAGE_LABELS.APPLIED}`, by: null, isCurrent: false },
     ...sortHistory(history).map((h) => ({
       key: h.id,
       at: h.changedAt,
       stage: h.toStage,
       text: `Moved from ${STAGE_LABELS[h.fromStage]} → ${STAGE_LABELS[h.toStage]}`,
+      by: h.changedBy?.name ?? null,
       isCurrent: false,
     })),
   ]
   entries[entries.length - 1].isCurrent = true
   return entries
-}
-
-/**
- * When the candidate entered their current stage, taken from the audit trail:
- * the latest transition, or — if there has never been one — when they were added.
- */
-export function currentStageStartedAt(candidate: Candidate, history: readonly StageHistoryEntry[]): string {
-  const sorted = sortHistory(history)
-  return sorted.length > 0 ? sorted[sorted.length - 1].changedAt : candidate.createdAt
-}
-
-/**
- * The candidate and history come from two requests, so a transition landing
- * between them would leave the stage disagreeing with the latest history row.
- */
-export function isSnapshotConsistent(candidate: Candidate, history: readonly StageHistoryEntry[]): boolean {
-  const sorted = sortHistory(history)
-  const expected: Stage = sorted.length > 0 ? sorted[sorted.length - 1].toStage : 'APPLIED'
-  return candidate.currentStage === expected
 }
 
 function plural(n: number, unit: string): string {
@@ -75,9 +58,8 @@ export function formatDetailedDuration(elapsedMs: number): string {
 }
 
 /** "Currently in Interview for 3 days 7 hours". */
-export function describeCurrentStage(candidate: Candidate, history: readonly StageHistoryEntry[], now: number): string {
-  const startedAt = Date.parse(currentStageStartedAt(candidate, history))
-  return `Currently in ${STAGE_LABELS[candidate.currentStage]} for ${formatDetailedDuration(now - startedAt)}`
+export function describeCurrentStage(stage: Stage, since: string, now: number): string {
+  return `Currently in ${STAGE_LABELS[stage]} for ${formatDetailedDuration(now - Date.parse(since))}`
 }
 
 /** "Sep 20", or "Sep 20, 2025" when it isn't this year. */

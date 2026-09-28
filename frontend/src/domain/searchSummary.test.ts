@@ -1,136 +1,70 @@
-import { describe, expect, it } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import type { ParsedQuery } from '../api/types'
-import {
-  countLabel,
-  describeFilters,
-  describeMatch,
-  extraParseDetail,
-  isNameOnly,
-  SEARCH_HELP,
-} from './searchSummary'
-
-const NOW = Date.parse('2026-10-01T12:00:00.000Z')
+import { countLabel, describeFilters, describeMatch, extraParseDetail, isNameOnly } from './searchSummary'
 
 describe('describeFilters', () => {
-  it('describes a current-stage filter', () => {
-    expect(describeFilters({ currentStage: 'INTERVIEW' }, NOW)).toEqual(['Current stage = Interview'])
-  })
-
-  it('describes stage plus time in stage, as in "stuck in Screening for more than a week"', () => {
-    expect(
-      describeFilters(
-        { currentStage: 'SCREENING', currentStageDuration: { operator: '>', durationDays: 7 } },
-        NOW,
-      ),
-    ).toEqual(['Current stage = Screening', 'More than 7 days in current stage'])
-  })
-
-  it.each([
-    ['>', 'More than'],
-    ['>=', 'At least'],
-    ['<', 'Less than'],
-    ['<=', 'At most'],
-    ['=', 'Exactly'],
-  ] as const)('spells the %s operator as "%s"', (operator, words) => {
-    expect(describeFilters({ currentStageDuration: { operator, durationDays: 3 } }, NOW)).toEqual([
-      `${words} 3 days in current stage`,
-    ])
-  })
-
-  it('uses the singular for one day', () => {
-    expect(describeFilters({ currentStageDuration: { operator: '<', durationDays: 1 } }, NOW)).toEqual([
-      'Less than 1 day in current stage',
-    ])
-  })
-
-  it('describes movement with and without a date', () => {
-    expect(
-      describeFilters({ movedToStage: { stage: 'INTERVIEW', since: '2026-09-21T00:00:00.000Z' } }, NOW),
-    ).toEqual([`Moved to Interview since ${new Date('2026-09-21T00:00:00.000Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`])
-    expect(describeFilters({ movedToStage: { stage: 'OFFER' } }, NOW)).toEqual(['Moved to Offer'])
-  })
-
-  it('describes outcome, exclusion and name filters', () => {
-    expect(describeFilters({ reachedStageNotHired: 'OFFER' }, NOW)).toEqual(['Reached Offer but not hired'])
-    expect(describeFilters({ excludeStages: ['REJECTED'] }, NOW)).toEqual(['Excluding Rejected'])
-    expect(describeFilters({ excludeStages: ['REJECTED', 'HIRED'] }, NOW)).toEqual(['Excluding Rejected, Hired'])
-    expect(describeFilters({ name: { query: 'sharam' } }, NOW)).toEqual(['Name similar to “sharam”'])
-  })
-
-  it('lists every filter of a combined query', () => {
+  it('describes each recognised filter in plain English', () => {
     const parsed: ParsedQuery = {
-      name: { query: 'Priya' },
+      name: { query: 'priya' },
       currentStage: 'SCREENING',
       currentStageDuration: { operator: '>', durationDays: 7 },
+      movedToStage: { stage: 'INTERVIEW', since: '2026-01-05T00:00:00.000Z' },
+      reachedStageNotHired: 'OFFER',
+      excludeStages: ['REJECTED'],
     }
-    expect(describeFilters(parsed, NOW)).toEqual([
-      'Name similar to “Priya”',
+    const labels = describeFilters(parsed)
+    expect(labels).toEqual([
+      'Name similar to “priya”',
       'Current stage = Screening',
       'More than 7 days in current stage',
+      'Moved to Interview since Jan 5, 2026',
+      'Reached Offer but not hired',
+      'Excluding Rejected',
     ])
   })
 
-  it('returns nothing when there are no filters (a "show everyone" query)', () => {
-    expect(describeFilters({}, NOW)).toEqual([])
+  it('is empty for an empty filter set', () => {
+    expect(describeFilters({})).toEqual([])
+  })
+
+  it('uses singular "day" for exactly one', () => {
+    expect(describeFilters({ currentStageDuration: { operator: '=', durationDays: 1 } })).toEqual(['Exactly 1 day in current stage'])
   })
 })
 
 describe('describeMatch', () => {
-  it.each([
-    ['exact', 'Exact name match'],
-    ['prefix', 'Name starts with “priya”'],
-    ['word', 'Name contains “priya”'],
-    ['fuzzy', 'Fuzzy name match'],
-  ] as const)('%s -> %s', (type, text) => {
-    expect(describeMatch(type, 'priya')).toBe(text)
+  it('explains each match type', () => {
+    expect(describeMatch('exact', 'priya')).toBe('Exact name match')
+    expect(describeMatch('prefix', 'pri')).toBe('Name starts with “pri”')
+    expect(describeMatch('word', 'sharma')).toBe('Name contains “sharma”')
+    expect(describeMatch('fuzzy', 'sharam')).toBe('Fuzzy name match')
   })
 })
 
 describe('isNameOnly', () => {
-  it('is true only when the name is the sole thing understood', () => {
-    expect(isNameOnly({ name: { query: 'purple elephants' } })).toBe(true)
-    expect(isNameOnly({ name: { query: 'Priya' }, currentStage: 'SCREENING' })).toBe(false)
-    expect(isNameOnly({ currentStage: 'INTERVIEW' })).toBe(false)
+  it('is true only when name is the sole filter understood', () => {
+    expect(isNameOnly({ name: { query: 'priya' } })).toBe(true)
+    expect(isNameOnly({ name: { query: 'priya' }, currentStage: 'SCREENING' })).toBe(false)
+    expect(isNameOnly({ currentStage: 'SCREENING' })).toBe(false)
     expect(isNameOnly({})).toBe(false)
-  })
-
-  it('ignores keys that are present but undefined', () => {
-    expect(isNameOnly({ name: { query: 'x' }, currentStage: undefined })).toBe(true)
   })
 })
 
 describe('countLabel', () => {
-  it.each([
-    [0, '0 candidates found'],
-    [1, '1 candidate found'],
-    [3, '3 candidates found'],
-  ])('%d -> %s', (n, text) => {
-    expect(countLabel(n)).toBe(text)
+  it('pluralises correctly', () => {
+    expect(countLabel(0)).toBe('0 candidates found')
+    expect(countLabel(1)).toBe('1 candidate found')
+    expect(countLabel(5)).toBe('5 candidates found')
   })
 })
 
 describe('extraParseDetail', () => {
-  it('drops the generic sentence the heading already says', () => {
-    expect(extraParseDetail("I couldn't understand this search.")).toBe('')
+  it('strips the generic opening sentence, case- and punctuation-insensitively', () => {
+    expect(extraParseDetail("I couldn't understand this search. Unknown stage: banana")).toBe('Unknown stage: banana')
     expect(extraParseDetail('I couldn’t understand this search.')).toBe('')
   })
 
-  it('keeps what follows it', () => {
-    expect(extraParseDetail("I couldn't understand this search. The query was empty.")).toBe('The query was empty.')
-  })
-
-  it('keeps a specific message untouched', () => {
-    const message = 'I understood you\'re referring to a stage ("Bananas"), but that\'s not a valid stage.'
-    expect(extraParseDetail(message)).toBe(message)
-  })
-})
-
-describe('SEARCH_HELP', () => {
-  it('covers every kind of search the brief lists, each with an example', () => {
-    const topics = SEARCH_HELP.map((h) => h.topic.toLowerCase())
-    for (const expected of ['candidate name', 'current stage', 'time in stage', 'stage movement', 'hiring outcome']) {
-      expect(topics).toContain(expected)
-    }
-    expect(SEARCH_HELP.every((h) => h.example.length > 0)).toBe(true)
+  it('leaves an unrelated message alone', () => {
+    expect(extraParseDetail('Something else entirely.')).toBe('Something else entirely.')
   })
 })

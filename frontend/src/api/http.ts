@@ -1,3 +1,4 @@
+import { getActingUserId } from './actingUser'
 import type { FieldIssue } from './types'
 
 export class ApiError extends Error {
@@ -33,6 +34,8 @@ function isAbortError(err: unknown): boolean {
 export async function request<T>(path: string, init: RequestInit = {}, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(init.headers)
   if (init.body !== undefined) headers.set('Content-Type', 'application/json')
+  const actingUserId = getActingUserId()
+  if (actingUserId) headers.set('x-user-id', actingUserId)
 
   // One controller lets both the caller's signal and our timeout cancel the fetch.
   const controller = new AbortController()
@@ -72,4 +75,59 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * Builds "?a=1&b=2" from the defined values, skipping undefined/empty ones so
+ * callers can pass optional filters straight through.
+ */
+export function queryString(params: Record<string, string | number | boolean | undefined | null>): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue
+    search.set(key, String(value))
+  }
+  const text = search.toString()
+  return text ? `?${text}` : ''
+}
+
+/**
+ * Downloads a file the API generates. Goes through fetch (rather than a plain
+ * link) so the request carries the same acting-user header as every other call.
+ */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const headers = new Headers()
+  const actingUserId = getActingUserId()
+  if (actingUserId) headers.set('x-user-id', actingUserId)
+
+  let res: Response
+  try {
+    res = await fetch(path, { headers })
+  } catch {
+    throw new ApiError("Can't reach the server. Check your connection and try again.", 0)
+  }
+  if (!res.ok) throw new ApiError(`Download failed (${res.status})`, res.status)
+
+  const url = URL.createObjectURL(await res.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.append(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+/**
+ * The server's per-field validation messages as { fieldName: message }, for
+ * showing each next to its input. Empty for any other kind of error.
+ */
+export function fieldErrorsOf(err: unknown): Record<string, string> {
+  if (!(err instanceof ApiError) || !err.details) return {}
+  const out: Record<string, string> = {}
+  for (const issue of err.details) {
+    const key = issue.path.split('.')[0]
+    if (key && !(key in out)) out[key] = issue.message
+  }
+  return out
 }

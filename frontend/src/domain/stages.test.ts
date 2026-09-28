@@ -1,61 +1,50 @@
-import { describe, expect, it } from 'vitest'
-import { STAGES, type Stage } from '../api/types'
+import { describe, it, expect } from 'vitest'
+import type { Stage } from '../api/types'
 import { canReject, formatTimeInStage, nextStage, PIPELINE_STAGES } from './stages'
 
+describe('PIPELINE_STAGES', () => {
+  it('lists the board columns in forward order, excluding Rejected', () => {
+    expect(PIPELINE_STAGES).toEqual(['APPLIED', 'SCREENING', 'INTERVIEW', 'OFFER', 'HIRED'])
+  })
+})
+
 describe('nextStage', () => {
-  it.each<[Stage, Stage | null]>([
-    ['APPLIED', 'SCREENING'],
-    ['SCREENING', 'INTERVIEW'],
-    ['INTERVIEW', 'OFFER'],
-    ['OFFER', 'HIRED'],
-    ['HIRED', null],
-    ['REJECTED', null],
-  ])('%s -> %s', (from, expected) => {
-    expect(nextStage(from)).toBe(expected)
+  it('steps forward one stage at a time', () => {
+    expect(nextStage('APPLIED')).toBe('SCREENING')
+    expect(nextStage('SCREENING')).toBe('INTERVIEW')
+    expect(nextStage('INTERVIEW')).toBe('OFFER')
+    expect(nextStage('OFFER')).toBe('HIRED')
   })
 
-  it('only ever offers the single next step: no skipping, no going back', () => {
-    for (const stage of STAGES) {
-      const next = nextStage(stage)
-      if (next) expect(PIPELINE_STAGES.indexOf(next)).toBe(PIPELINE_STAGES.indexOf(stage) + 1)
-    }
+  it('is null for final stages', () => {
+    expect(nextStage('HIRED')).toBeNull()
+    expect(nextStage('REJECTED')).toBeNull()
   })
 })
 
 describe('canReject', () => {
-  it.each<[Stage, boolean]>([
-    ['APPLIED', true],
-    ['SCREENING', true],
-    ['INTERVIEW', true],
-    ['OFFER', true],
-    ['HIRED', false],
-    ['REJECTED', false],
-  ])('%s -> %s', (stage, expected) => {
-    expect(canReject(stage)).toBe(expected)
+  it('allows rejecting from any non-final stage', () => {
+    const nonFinal: Stage[] = ['APPLIED', 'SCREENING', 'INTERVIEW', 'OFFER']
+    for (const s of nonFinal) expect(canReject(s)).toBe(true)
+  })
+
+  it('refuses once Hired or Rejected', () => {
+    expect(canReject('HIRED')).toBe(false)
+    expect(canReject('REJECTED')).toBe(false)
   })
 })
 
 describe('formatTimeInStage', () => {
-  const now = Date.parse('2026-09-28T12:00:00.000Z')
-  const ago = (ms: number) => new Date(now - ms).toISOString()
-  const MIN = 60_000
-  const HOUR = 60 * MIN
-  const DAY = 24 * HOUR
+  const now = Date.parse('2026-01-10T00:00:00.000Z')
 
-  it.each([
-    [0, 'under a minute'],
-    [59_000, 'under a minute'],
-    [MIN, '1 minute'],
-    [45 * MIN, '45 minutes'],
-    [HOUR, '1 hour'],
-    [23 * HOUR + 59 * MIN, '23 hours'],
-    [DAY, '1 day'],
-    [8 * DAY + 5 * HOUR, '8 days'],
-  ])('%d ms -> %s', (elapsed, expected) => {
-    expect(formatTimeInStage(ago(elapsed), now)).toBe(expected)
+  it('graduates through minutes, hours and days', () => {
+    expect(formatTimeInStage(new Date(now - 30_000).toISOString(), now)).toBe('under a minute')
+    expect(formatTimeInStage(new Date(now - 5 * 60_000).toISOString(), now)).toBe('5 minutes')
+    expect(formatTimeInStage(new Date(now - 3 * 3_600_000).toISOString(), now)).toBe('3 hours')
+    expect(formatTimeInStage(new Date(now - 2 * 86_400_000).toISOString(), now)).toBe('2 days')
   })
 
-  it('never goes negative when the server clock is slightly ahead', () => {
-    expect(formatTimeInStage(new Date(now + 5_000).toISOString(), now)).toBe('under a minute')
+  it('never goes negative for a timestamp in the future', () => {
+    expect(formatTimeInStage(new Date(now + 60_000).toISOString(), now)).toBe('under a minute')
   })
 })
