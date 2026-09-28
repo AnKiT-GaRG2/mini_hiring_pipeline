@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Stage {
+  APPLIED
+  SCREENING
+  INTERVIEW
+  OFFER
+  HIRED
+  REJECTED
+}
+
+model Candidate {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String?
+  currentStage Stage    @default(APPLIED)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  stageHistory StageHistory[]
+
+  @@index([currentStage])
+}
+
+// Append-only: rows are only ever created by the transition service, never
+// updated or deleted (enforced further by a DB trigger — see migration.sql).
+model StageHistory {
+  id          String   @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  fromStage   Stage
+  toStage     Stage
+  changedAt   DateTime  @default(now())
+
+  @@index([candidateId])
+}

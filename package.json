@@ -1,0 +1,29 @@
+{
+  "name": "mini-hiring-pipeline",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "test:backend": "npm run test --workspace=backend",
+    "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
+    "prisma:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
+    "prisma:studio": "prisma studio --schema=prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts",
+    "test:frontend": "npm run test --workspace=frontend",
+    "test": "npm run test:backend && npm run test:frontend"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0",
+    "typescript": "^5.9.3"
+  }
+}
