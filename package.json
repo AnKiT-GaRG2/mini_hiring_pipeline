@@ -16,6 +16,7 @@
     "prisma:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema=prisma/schema.prisma",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:demo": "tsx prisma/seed-demo.ts",
     "test:frontend": "npm run test --workspace=frontend",
     "test": "npm run test:backend && npm run test:frontend",
     "build": "npm run prisma:generate && npm run build:backend",

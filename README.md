@@ -845,6 +845,11 @@ security review beyond parameterised queries and server-side validation. Treat i
 
 ### Chat logs and where I disagreed with the AI
 
-> **To complete before submitting** — this part must come from me, not from the AI, so it is deliberately not
-> filled in: (1) commit the AI chat logs under `docs/` and link them here; (2) document **one real example where I
-> disagreed with the AI and why** — what it proposed, what I chose instead, and the reasoning.
+> **Still to do:** commit the actual chat logs under `docs/` and link them here.
+
+**Dependency versions.** On the very first setup, the agent's default install pulled the newest major
+versions available at the time — TypeScript 7 and Prisma 7. I didn't go with that. Both had just shipped,
+and Prisma 7 in particular changed how the client is generated. I wasn't willing to build something I'd be
+vouching for on tooling that new, so I had it pinned back down to the last stable majors — TypeScript 5 and
+Prisma 5 — even though that meant giving up whatever the newer versions improved. I'd rather ship on a
+version I understand than the newest one available.
