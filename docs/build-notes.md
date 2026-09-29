@@ -13,7 +13,7 @@
 > "Why transactions — and why they weren't enough". Test counts below are from before that fix
 > (backend is now 238 tests).
 
-# Mini Hiring Pipeline
+# HireTrail
 
 A recruiter tool for managing candidates through a single hiring pipeline
 (Applied → Screening → Interview → Offer → Hired), with an audit trail of

@@ -1,4 +1,4 @@
-# Mini Hiring Pipeline
+# HireTrail
 
 A small hiring tool for **one recruiter managing candidates for one job**. Candidates move through
 `Applied → Screening → Interview → Offer → Hired` (or are `Rejected` at any point before being hired), every

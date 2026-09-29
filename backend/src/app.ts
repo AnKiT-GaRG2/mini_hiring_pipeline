@@ -1,4 +1,6 @@
+import cors from "cors";
 import express from "express";
+import { env } from "./config/env";
 import { healthRouter } from "./routes/health.routes";
 import { candidateRouter, noteRouter, tagRouter } from "./routes/candidate.routes";
 import { searchRouter } from "./routes/search.routes";
@@ -11,6 +13,10 @@ import { attachCurrentUser } from "./middleware/currentUser";
 import { errorHandler } from "./middleware/errorHandler";
 
 export const app = express();
+
+// The frontend is deployed on a different origin (Vercel) than this API (Render), so the
+// browser needs an explicit CORS allow before it'll let the frontend read a response.
+if (env.frontendOrigin) app.use(cors({ origin: env.frontendOrigin }));
 
 // Company logos and cover images travel as data: URLs, so allow bodies a little over the 1.5 MB cover limit.
 app.use(express.json({ limit: "3mb" }));

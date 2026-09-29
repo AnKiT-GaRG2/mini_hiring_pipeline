@@ -1,6 +1,11 @@
 import { getActingUserId } from './actingUser'
 import type { FieldIssue } from './types'
 
+// Unset in dev: the Vite proxy forwards /api and /health to the local backend, so a
+// relative path is enough. Set for a production build where the frontend and backend
+// are deployed as separate origins — Vite inlines it at build time.
+const API_BASE = import.meta.env.VITE_API_URL ?? ''
+
 export class ApiError extends Error {
   status: number
   details?: FieldIssue[]
@@ -56,7 +61,7 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
   try {
     let res: Response
     try {
-      res = await fetch(path, { ...init, headers, signal: controller.signal })
+      res = await fetch(`${API_BASE}${path}`, { ...init, headers, signal: controller.signal })
     } catch (err) {
       if (timedOut) throw timeoutError()
       if (isAbortError(err)) throw err // cancelled by the caller: not a failure to report
@@ -102,7 +107,7 @@ export async function downloadFile(path: string, filename: string): Promise<void
 
   let res: Response
   try {
-    res = await fetch(path, { headers })
+    res = await fetch(`${API_BASE}${path}`, { headers })
   } catch {
     throw new ApiError("Can't reach the server. Check your connection and try again.", 0)
   }

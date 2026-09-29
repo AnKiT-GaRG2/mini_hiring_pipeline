@@ -13,4 +13,8 @@ export const env = {
   // There is no sign-in yet. Until there is, every request acts as this team
   // member (or as whoever the `x-user-id` header names — see middleware/currentUser).
   defaultUserEmail: (process.env.DEFAULT_USER_EMAIL || "ankit.garg@example.com").toLowerCase(),
+  // The deployed frontend's origin, e.g. "https://hiretrail-frontend.onrender.com".
+  // Browsers block cross-origin fetches without this; unset (dev) means the
+  // Vite proxy is doing the job instead, so no CORS header is needed.
+  frontendOrigin: process.env.FRONTEND_ORIGIN || "",
 };
